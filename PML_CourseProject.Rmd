@@ -1,0 +1,154 @@
+---
+title: "Course Project - Prediction Assignment Writeup"
+author: "Minna Asplund"
+date: "January 26, 2018"
+output: html_document
+---
+
+## Overview
+
+This document is the final report of the Coursera Practical Machine Learning course project. 
+The document was written with R Studio using R Markdown language. Knitr was used to make the document into a HTML format.
+
+The purpose of the writeup assignment is to predict how well 6 participants performed barbell lifts when asked to do those lifts correctly and incorrectly in
+5 different ways. 
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+## About Data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+
+The data for this project comes from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har.
+The source is: Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. "Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13)". Stuttgart, Germany: ACM SIGCHI, 2013.
+
+In the webpage above, there is a short description of the data: 
+
+"*Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).*
+
+*Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. Participants were supervised by an experienced weight lifter to make sure the execution complied to the manner they were supposed to simulate. The exercises were performed by six male participants aged between 20-28 years, with little weight lifting experience. We made sure that all participants could easily simulate the mistakes in a safe and controlled manner by using a relatively light dumbbell (1.25kg).*"  
+
+## Libraries
+
+```{r warning = FALSE, message = FALSE}
+library(ggplot2)
+library(caret) 
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(gbm)
+```
+
+## Data Preparation and Cleaning
+
+Read the .csv files into dataset variables, and replace empty values with NA.
+```{r warning = FALSE, message = FALSE}
+training_DS <- read.csv("pml-training.csv", sep=",", header=TRUE, na.strings = c("NA","",'#DIV/0!'))
+testing_DS  <- read.csv("pml-testing.csv", sep=",", header=TRUE, na.strings = c("NA","",'#DIV/0!'))
+dim(training_DS)
+dim(testing_DS)
+```
+
+Next columns with missing values are removed.
+```{r warning = FALSE, message = FALSE}
+training_DS <- training_DS[,(colSums(is.na(training_DS)) == 0)]
+testing_DS <- testing_DS[,(colSums(is.na(testing_DS)) == 0)]
+```
+
+Additionally the first 7 columns are removed as they are not needed (x, user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, num_window). 
+
+```{r warning = FALSE, message = FALSE}
+training_DS <- training_DS[, -c(1:7)]
+testing_DS <- testing_DS[, -c(1:7)]
+dim(training_DS)
+dim(testing_DS)
+```
+
+There are 53 columns remaining in the datasets instead of the original 160 columns.
+
+## Dividing training dataset into training set and validation set
+
+In order to ....
+```{r warning = FALSE, message = FALSE}
+set.seed(4321)
+inTraining <- createDataPartition(training_DS$classe, p = 0.7, list=FALSE)
+training <- training_DS[inTraining, ]
+validation <- training_DS[-inTraining, ]
+
+dim(training)
+dim(validation)
+```
+
+## Building models
+
+Three different models are built in order to select the best fitted model.The selection is done by comparing the accuracies of the models.
+
+### Decision Tree
+At first the model is fitted with training data set.
+```{r warning = FALSE, message = FALSE}
+model1_fitted <- rpart(classe ~ ., data = training, method = "class")
+rpart.plot(model1_fitted)
+```
+
+Then the model is used in prediction with validation data set.
+```{r warning = FALSE, message = FALSE}
+prediction_decision_tree <- predict(model1_fitted, validation, type = "class")
+result_decision_tree <- confusionMatrix(prediction_decision_tree, validation$classe)
+result_decision_tree
+```
+
+The accuracy of **decision tree** is **0.738**.
+
+### Random Forest
+At first the model is fitted with training data set.
+```{r warning = FALSE, message = FALSE}
+model2_control <- trainControl(method = "cv", number = 3, verboseIter = FALSE)
+model2_fitted <- train(classe ~ ., data = training, method = "rf", trControl = model2_control)
+```
+
+Then the model is used in prediction with validation data set.
+```{r warning = FALSE, message = FALSE}
+prediction_random_forest  <- predict(model2_fitted, newdata = validation)
+result_random_forest <- confusionMatrix(prediction_random_forest, validation$classe)
+result_random_forest
+
+qplot(classe, prediction_random_forest, data = validation,  colour = classe, geom = c("boxplot", "jitter"), main = "Predicted vs. Observed Classes in Validation Dataset - Random Forest", xlab = "Observed Classe", ylab = "Predicted Classe")
+```
+
+The accuracy of **random forest** is **0.992**.
+
+### General Boosted Model
+At first the model is fitted with training data set.
+```{r warning = FALSE, message = FALSE}
+model3_control <- trainControl(method = "repeatedcv", number = 3, repeats = 1)
+model3_fitted <- train(classe ~ ., data = training, method = "gbm", trControl = model3_control, verbose = FALSE)
+```
+
+Then the model is used in prediction with validation data set.
+```{r warning = FALSE, message = FALSE}
+prediction_gbm  <- predict(model3_fitted, newdata = validation)
+result_gbm <- confusionMatrix(prediction_gbm, validation$classe)
+result_gbm
+
+qplot(classe, prediction_gbm, data = validation,  colour = classe, geom = c("boxplot", "jitter"), main = "Predicted vs. Observed Classes in Validation Dataset - GBM", xlab = "Observed Classe", ylab = "Predicted Classe")
+```
+
+The accuracy of **general boosted model** is **0.960**.
+
+
+## Model Selection
+
+The Random Forest model had the best accuracy rate, so it is selected to be run with actual testing data set (testing_DS), which has not been used so far. 
+```{r warning = FALSE, message = FALSE}
+final_prediction  <- predict(model2_fitted, newdata = testing_DS)
+final_prediction
+```
